@@ -5,7 +5,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
-## [0.3.2] - 2026-11-25
+## [0.3.1-ycwang.1] - 2026-11-25
 
 ### Added & Improved
 
@@ -16,7 +16,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Enhanced Python `@dataclass`, route, and CLI decorator extraction in `quick_outline` (`src/tools/read-slices.ts`)**
   - Extracted `@dataclass` definitions and Python route/CLI decorators (e.g., `@router.*`, `@app.*`, `@cli.*`, `@click.*`) alongside their decorated functions/classes in `quick_outline`.
 
-### 简体中文摘要（v0.3.2）
+### 简体中文摘要（v0.3.1-ycwang.1）
 
 - **Python 生态日志降噪（`src/utils/output-filter.ts`）**：自动收敛 `pytest`、`mypy`、`ruff` 冗余头部与汇总输出，并折叠 `tqdm` 回车刷新进度帧，让 `run_checks` 与 `apply_edits` 内联 `verify` 在紧凑字节预算内聚焦有效诊断信息。
 - **`SessionStart` `.agent/plugins` 与门禁脚本探测（`src/utils/snapshot.ts`）**：启动快照自动探测 `.agent/plugins/*/mcp_config.json` 与仓库审计/门禁脚本（如 `scripts/audit_*.py`、`scripts/devops/*`），开局即可感知本地插件与校验入口。
