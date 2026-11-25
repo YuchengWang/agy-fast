@@ -462,10 +462,10 @@ function stripBenignZeroCounts(line: string): string {
 }
 
 const ERROR_LINE_PATTERN =
-  /(?:\berr!|\b(?:errors?|fail(?:ed|ing|ure|ures)?|exception|traceback|panic|fatal|assertion|syntaxerror|typeerror|referenceerror|zoderror|validationerror|ts\d{4}|e\d{4}|cannot find|not found|unexpected|undefined)\b|caused by:|application failed to start|compilation error|<<<\s*(?:failure|error)|找不到符号|符号:|位置:)/i;
+  /(?:\berr!|\b(?:errors?|fail(?:ed|ing|ure|ures)?|exception|traceback|panic|fatal|assertion|(?:syntax|type|reference|zod|validation|value|key|attribute|import|modulenotfound|runtime|name|index|assertion|filenotfound|os|timeout|connection|zerodivision|recursion|notimplemented|permission|lookup|io|eof|memory|overflow|system|unicode|brokenpipe)error|ts\d{4}|e\d{4}|cannot find|not found|unexpected|undefined)\b|^\S+\.pyi?:\d+:\d+:\s+[A-Z]{1,4}\d{2,4}\b|^E\s{3,}\S|^_{3,}\s+\S.*\s+_{3,}$|caused by:|application failed to start|compilation error|<<<\s*(?:failure|error)|找不到符号|符号:|位置:)/i;
 
 const ROOT_CAUSE_HEADER_PATTERN =
-  /(?:^\s*(?:description|action):|caused by:|application failed to start|⎯\s*failed tests|compilation error)/i;
+  /(?:^\s*(?:description|action):|caused by:|application failed to start|⎯\s*failed tests|compilation error|^Traceback \(most recent call last\):$|^={3,}\s+(?:FAILURES|ERRORS)\s+={3,}$)/i;
 
 // Strict superset of ERROR_LINE_PATTERN plus warnings, crashes, and localized failure terms
 const FOLD_DANGER_TOKEN_PATTERN =
@@ -488,6 +488,14 @@ const ALWAYS_NOISE_LINE_PATTERNS: RegExp[] = [
   /^\[ERROR\]\s*(?:To see the full stack trace|Re-run Maven using the -X|For more information about the errors|\[Help \d+\]|->\s*\[Help \d+\])/i,
   /^\(node:\d+\)\s*ExperimentalWarning:/,
   /^\(Use `node --trace-warnings/,
+  // tqdm / rich progress bar remnants (percentage bar or unit-less counter)
+  /^\s*(?:[^:\r\n]{1,60}:\s*)?\d{1,3}%\|[█▉▊▋▌▍▎▏#=\-\s.]+\|\s*[\d.]+\w?\/[\d.]+\w?\s+\[[^\]\r\n]*(?:<|it\/s|s\/it|B\/s|\?)[^\]\r\n]*\]\s*$/,
+  /^\s*(?:[^:\r\n]{1,60}:\s*)?\d+(?:\.\d+)?[kMGTPE]?(?:it|B)\s+\[\d+:\d+,\s*[\d.?]+\s*(?:it\/s|s\/it|B\/s)\]\s*$/,
+  // mypy / ruff boilerplate hints that add noise without diagnostic value
+  /^\[\*\]\s+\d+\s+fixable with the\s+`--fix`\s+option\.?$/i,
+  /^No fixes available\s+\(\d+\s+hidden fix(?:es)?\s+can be enabled/i,
+  /^(?:\S+:\d+:\s+)?note:\s+(?:See https:\/\/mypy\.readthedocs\.io|By default the bodies of untyped functions|Use --ignore-missing-imports|Consider using --)/i,
+  /^(?:Daemon started|Restarting:\s+configuration changed)\b/,
 ];
 
 function isFailureNoiseLine(line: string): boolean {
@@ -502,7 +510,7 @@ function isFailureNoiseLine(line: string): boolean {
 }
 
 const SUMMARY_LINE_PATTERN =
-  /\b(passed|tests?|specs?|suites?|ok|warnings?|errors?|built in|compiled|done in|finished)\b/i;
+  /\b(passed|tests?|specs?|suites?|ok|warnings?|errors?|built in|compiled|done in|finished|no issues found)\b/i;
 
 const MONOREPO_PREFIX_PATTERN =
   /^(?:@[\w.-]+\/)?[\w./-]+(?::[A-Za-z][\w.-]*|\s+[A-Za-z][\w.-]*):\s+/;
@@ -543,6 +551,12 @@ const GREEN_BUILD_OR_PASS_PATTERNS: RegExp[] = [
   /^go:\s+downloading\s+\S/,
   /^>\s+Task\s+:[\w:.-]+\s+(?:UP-TO-DATE|FROM-CACHE|NO-SOURCE|SKIPPED)\s*$/,
   /^\[INFO\]\s*(?:---\s+\S|Building\s+\S|Compiling\s+\S|Changes detected|Nothing to compile|Copying\s+\d+|Using\s+'[^']+'\s+encoding|Downloading\b|Downloaded\b|Installing\s+\S|Packaging\s+\S|Tests run:\s*\d+,\s*Failures:\s*0,\s*Errors:\s*0\b|Results:|Running\s+\S|Reactor Summary|BUILD SUCCESS|Total time:|Finished at:|-+\s*$|$)/i,
+  // Python ecosystem (pytest collection headers, passing dots, mypy/ruff clean lines)
+  /^={3,}\s+test session starts\s+={3,}$/,
+  /^(?:platform\s+\S+\s+--\s+Python\s+|cachedir:\s+|rootdir:\s+|configfile:\s+|plugins:\s+|collecting\s+\.\.\.)/,
+  /^collected\s+[1-9]\d*\s+items?\b(?:\s*\/\s*\d+\s+(?:deselected|selected))*/,
+  /^Success:\s+no issues found in \d+ source files?\b/i,
+  /^All checks passed!$/i,
 ];
 
 // Explicit test-runner PASS verdicts whose trailing test description/path may
@@ -554,6 +568,10 @@ const UNAMBIGUOUS_TEST_PASS_PATTERNS: RegExp[] = [
   /^ok\t\S/,
   /^test\s+\S+\s+\.\.\.\s+ok\s*$/,
   /^PASS\s+\S+\.(?:[cm]?[jt]sx?|py|go|rs|rb|java|kt|cs|php|vue|svelte)\b/,
+  // Pytest passing dots / verbose test pass lines (must not contain F or E failure markers)
+  /^[.sx]{2,}\s*(?:\[\s*\d{1,3}%\s*\])?\s*$/,
+  /^\S+\.py\s+[.sx]+\s*(?:\[\s*\d{1,3}%\s*\])?\s*$/,
+  /^\S+\.py::\S+\s+(?:PASSED|SKIPPED|XFAIL)(?:\s+\[\s*\d{1,3}%\s*\])?\s*$/,
 ];
 
 function isUnambiguousTestPassLine(trimmed: string): boolean {

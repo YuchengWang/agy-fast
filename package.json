@@ -1,6 +1,6 @@
 {
   "name": "agy-fast",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Policy-compliant latency and tool-call accelerator plugin for Google Antigravity",
   "type": "module",
   "author": "inkwhite <714395048@qq.com>",

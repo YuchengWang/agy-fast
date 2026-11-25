@@ -1631,8 +1631,8 @@ function stripBenignZeroCounts(line) {
   );
   return afterLeading.replace(BENIGN_ZERO_COUNT_TRAILING_RE, " ");
 }
-var ERROR_LINE_PATTERN = /(?:\berr!|\b(?:errors?|fail(?:ed|ing|ure|ures)?|exception|traceback|panic|fatal|assertion|syntaxerror|typeerror|referenceerror|zoderror|validationerror|ts\d{4}|e\d{4}|cannot find|not found|unexpected|undefined)\b|caused by:|application failed to start|compilation error|<<<\s*(?:failure|error)|找不到符号|符号:|位置:)/i;
-var ROOT_CAUSE_HEADER_PATTERN = /(?:^\s*(?:description|action):|caused by:|application failed to start|⎯\s*failed tests|compilation error)/i;
+var ERROR_LINE_PATTERN = /(?:\berr!|\b(?:errors?|fail(?:ed|ing|ure|ures)?|exception|traceback|panic|fatal|assertion|(?:syntax|type|reference|zod|validation|value|key|attribute|import|modulenotfound|runtime|name|index|assertion|filenotfound|os|timeout|connection|zerodivision|recursion|notimplemented|permission|lookup|io|eof|memory|overflow|system|unicode|brokenpipe)error|ts\d{4}|e\d{4}|cannot find|not found|unexpected|undefined)\b|^\S+\.pyi?:\d+:\d+:\s+[A-Z]{1,4}\d{2,4}\b|^E\s{3,}\S|^_{3,}\s+\S.*\s+_{3,}$|caused by:|application failed to start|compilation error|<<<\s*(?:failure|error)|找不到符号|符号:|位置:)/i;
+var ROOT_CAUSE_HEADER_PATTERN = /(?:^\s*(?:description|action):|caused by:|application failed to start|⎯\s*failed tests|compilation error|^Traceback \(most recent call last\):$|^={3,}\s+(?:FAILURES|ERRORS)\s+={3,}$)/i;
 var FOLD_DANGER_TOKEN_PATTERN = /(?:\berr!|\b(?:errors?|fail(?:ed|ing|ure|ures)?|warns?|warnings?|exceptions?|tracebacks?|panics?|fatals?|assertions?|syntaxerror|typeerror|referenceerror|zoderror|validationerror|ts\d{4}|e\d{4}|cannot find|not found|unexpected|undefined|compilation error|killed|sigkill|sigsegv|sigabrt|oom|out of memory|timed out|timeout|refused|denied|permission|unhandled|mismatched|mismatch)\b|\bexit\s+(?:status|code)\s+[1-9]\d*\b|caused by:|application failed to start|<<<\s*(?:failure|error)|[✖✘✗×]\s+|找不到符号|符号:|位置:|错误|失败|异常|警告)/i;
 function isErrorLine(line) {
   return ERROR_LINE_PATTERN.test(stripBenignZeroCounts(line));
@@ -1647,7 +1647,15 @@ var JSON_INFO_LOG_PATTERNS = [
 var ALWAYS_NOISE_LINE_PATTERNS = [
   /^\[ERROR\]\s*(?:To see the full stack trace|Re-run Maven using the -X|For more information about the errors|\[Help \d+\]|->\s*\[Help \d+\])/i,
   /^\(node:\d+\)\s*ExperimentalWarning:/,
-  /^\(Use `node --trace-warnings/
+  /^\(Use `node --trace-warnings/,
+  // tqdm / rich progress bar remnants (percentage bar or unit-less counter)
+  /^\s*(?:[^:\r\n]{1,60}:\s*)?\d{1,3}%\|[█▉▊▋▌▍▎▏#=\-\s.]+\|\s*[\d.]+\w?\/[\d.]+\w?\s+\[[^\]\r\n]*(?:<|it\/s|s\/it|B\/s|\?)[^\]\r\n]*\]\s*$/,
+  /^\s*(?:[^:\r\n]{1,60}:\s*)?\d+(?:\.\d+)?[kMGTPE]?(?:it|B)\s+\[\d+:\d+,\s*[\d.?]+\s*(?:it\/s|s\/it|B\/s)\]\s*$/,
+  // mypy / ruff boilerplate hints that add noise without diagnostic value
+  /^\[\*\]\s+\d+\s+fixable with the\s+`--fix`\s+option\.?$/i,
+  /^No fixes available\s+\(\d+\s+hidden fix(?:es)?\s+can be enabled/i,
+  /^(?:\S+:\d+:\s+)?note:\s+(?:See https:\/\/mypy\.readthedocs\.io|By default the bodies of untyped functions|Use --ignore-missing-imports|Consider using --)/i,
+  /^(?:Daemon started|Restarting:\s+configuration changed)\b/
 ];
 function isFailureNoiseLine(line) {
   if (ALWAYS_NOISE_LINE_PATTERNS.some((re) => re.test(line))) return true;
@@ -1658,7 +1666,7 @@ function isFailureNoiseLine(line) {
   }
   return false;
 }
-var SUMMARY_LINE_PATTERN = /\b(passed|tests?|specs?|suites?|ok|warnings?|errors?|built in|compiled|done in|finished)\b/i;
+var SUMMARY_LINE_PATTERN = /\b(passed|tests?|specs?|suites?|ok|warnings?|errors?|built in|compiled|done in|finished|no issues found)\b/i;
 var MONOREPO_PREFIX_PATTERN = /^(?:@[\w.-]+\/)?[\w./-]+(?::[A-Za-z][\w.-]*|\s+[A-Za-z][\w.-]*):\s+/;
 var GREEN_BUILD_OR_PASS_PATTERNS = [
   // Vite / Rollup / esbuild / Webpack / bundler banners & asset size lines
@@ -1695,7 +1703,13 @@ var GREEN_BUILD_OR_PASS_PATTERNS = [
   /^(?:Compiling|Checking|Downloading|Downloaded|Updating|Fresh|Locking|Packaging|Documenting|Finished)\s+\S/,
   /^go:\s+downloading\s+\S/,
   /^>\s+Task\s+:[\w:.-]+\s+(?:UP-TO-DATE|FROM-CACHE|NO-SOURCE|SKIPPED)\s*$/,
-  /^\[INFO\]\s*(?:---\s+\S|Building\s+\S|Compiling\s+\S|Changes detected|Nothing to compile|Copying\s+\d+|Using\s+'[^']+'\s+encoding|Downloading\b|Downloaded\b|Installing\s+\S|Packaging\s+\S|Tests run:\s*\d+,\s*Failures:\s*0,\s*Errors:\s*0\b|Results:|Running\s+\S|Reactor Summary|BUILD SUCCESS|Total time:|Finished at:|-+\s*$|$)/i
+  /^\[INFO\]\s*(?:---\s+\S|Building\s+\S|Compiling\s+\S|Changes detected|Nothing to compile|Copying\s+\d+|Using\s+'[^']+'\s+encoding|Downloading\b|Downloaded\b|Installing\s+\S|Packaging\s+\S|Tests run:\s*\d+,\s*Failures:\s*0,\s*Errors:\s*0\b|Results:|Running\s+\S|Reactor Summary|BUILD SUCCESS|Total time:|Finished at:|-+\s*$|$)/i,
+  // Python ecosystem (pytest collection headers, passing dots, mypy/ruff clean lines)
+  /^={3,}\s+test session starts\s+={3,}$/,
+  /^(?:platform\s+\S+\s+--\s+Python\s+|cachedir:\s+|rootdir:\s+|configfile:\s+|plugins:\s+|collecting\s+\.\.\.)/,
+  /^collected\s+[1-9]\d*\s+items?\b(?:\s*\/\s*\d+\s+(?:deselected|selected))*/,
+  /^Success:\s+no issues found in \d+ source files?\b/i,
+  /^All checks passed!$/i
 ];
 var UNAMBIGUOUS_TEST_PASS_PATTERNS = [
   /^[✓✔]\s+(?!built\b|done\b|\d+\s+modules?\s+transformed\b)\S/,
@@ -1703,7 +1717,11 @@ var UNAMBIGUOUS_TEST_PASS_PATTERNS = [
   /^ok\s+\d+\s+-\s+\S/,
   /^ok\t\S/,
   /^test\s+\S+\s+\.\.\.\s+ok\s*$/,
-  /^PASS\s+\S+\.(?:[cm]?[jt]sx?|py|go|rs|rb|java|kt|cs|php|vue|svelte)\b/
+  /^PASS\s+\S+\.(?:[cm]?[jt]sx?|py|go|rs|rb|java|kt|cs|php|vue|svelte)\b/,
+  // Pytest passing dots / verbose test pass lines (must not contain F or E failure markers)
+  /^[.sx]{2,}\s*(?:\[\s*\d{1,3}%\s*\])?\s*$/,
+  /^\S+\.py\s+[.sx]+\s*(?:\[\s*\d{1,3}%\s*\])?\s*$/,
+  /^\S+\.py::\S+\s+(?:PASSED|SKIPPED|XFAIL)(?:\s+\[\s*\d{1,3}%\s*\])?\s*$/
 ];
 function isUnambiguousTestPassLine(trimmed) {
   if (!trimmed || /[✖✘✗×]/.test(trimmed)) return false;
@@ -6724,14 +6742,65 @@ function extractPythonSymbols(lines) {
       activeSingleIsFString = false;
     }
   }
+  const dataclassDecoRe = /@(?:dataclasses\.)?dataclass\b/;
+  const routeDecoRe = /@[A-Za-z_][\w.]*\.(get|post|put|patch|delete|options|head|route|api_route|websocket)\s*\(\s*['"]([^'"]+)['"]/i;
+  const cliDecoRe = /@(?:click|[A-Za-z_]\w*)\.(?:command|group)\s*(?:\(\s*(?:['"]([^'"]+)['"])?)?/;
+  const addParserRe = /^([ \t]*)[^#"'\n]*\badd_parser\s*\(/;
+  const addRouteCallRe = /^([ \t]*)[^#"'\n]*\.add_(?:api_route|route|url_rule)\s*\(/;
   const raw = [];
   for (let i = 0; i < lines.length; i++) {
     if (isContinuation[i]) continue;
-    const m = re.exec(lines[i]);
-    if (!m) continue;
-    const indent = m[1].replace(/\t/g, "    ").length;
-    const kind = m[2] === "class" ? "class" : indent > 0 ? "method" : "function";
-    raw.push({ indent, kind, name: m[3], defIdx: i });
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const m = re.exec(line);
+    if (m) {
+      const indent = m[1].replace(/\t/g, "    ").length;
+      const kind = m[2] === "class" ? "class" : indent > 0 ? "method" : "function";
+      raw.push({ indent, kind, name: m[3], defIdx: i });
+      continue;
+    }
+    const mp = addParserRe.exec(line);
+    if (mp) {
+      const indent = mp[1].replace(/\t/g, "    ").length;
+      let endIdx = i;
+      const maxLook = Math.min(lines.length - 1, i + 8);
+      while (endIdx + 1 <= maxLook && isContinuation[endIdx + 1]) {
+        endIdx++;
+      }
+      const snippet = lines.slice(i, endIdx + 1).join(" ");
+      const argMatch = /\badd_parser\s*\(\s*['"]([^'"]+)['"]/.exec(snippet);
+      if (argMatch?.[1]) {
+        symbols.push({
+          kind: "cli",
+          name: `add_parser ${argMatch[1]}`,
+          startLine: i + 1,
+          endLine: endIdx + 1,
+          depth: indent > 0 ? 1 : 0
+        });
+      }
+      continue;
+    }
+    const mr = addRouteCallRe.exec(line);
+    if (mr) {
+      const indent = mr[1].replace(/\t/g, "    ").length;
+      let endIdx = i;
+      const maxLook = Math.min(lines.length - 1, i + 8);
+      while (endIdx + 1 <= maxLook && isContinuation[endIdx + 1]) {
+        endIdx++;
+      }
+      const snippet = lines.slice(i, endIdx + 1).join(" ");
+      const argMatch = /\.add_(?:api_route|route|url_rule)\s*\(\s*['"]([^'"]+)['"]/.exec(snippet);
+      if (argMatch?.[1]) {
+        symbols.push({
+          kind: "route",
+          name: `ROUTE ${argMatch[1]}`,
+          startLine: i + 1,
+          endLine: endIdx + 1,
+          depth: indent > 0 ? 1 : 0
+        });
+      }
+    }
   }
   for (let idx = 0; idx < raw.length; idx++) {
     const item = raw[idx];
@@ -6742,6 +6811,26 @@ function extractPythonSymbols(lines) {
       if (trimmed.startsWith("#")) continue;
       if (!trimmed.startsWith("@") || indentOf(lines[j]) !== item.indent) break;
       startIdx = j;
+    }
+    let kind = item.kind;
+    let name = item.name;
+    if (startIdx < item.defIdx) {
+      const decoText = lines.slice(startIdx, item.defIdx).join(" ");
+      if (kind === "class" && dataclassDecoRe.test(decoText)) {
+        kind = "dataclass";
+      } else if (kind !== "class") {
+        const routeMatch = routeDecoRe.exec(decoText);
+        if (routeMatch?.[1] && routeMatch[2]) {
+          kind = "route";
+          name = `${routeMatch[1].toUpperCase()} ${routeMatch[2]} (${item.name})`;
+        } else {
+          const cliMatch = cliDecoRe.exec(decoText);
+          if (cliMatch) {
+            kind = "command";
+            name = cliMatch[1] ? `${cliMatch[1]} (${item.name})` : item.name;
+          }
+        }
+      }
     }
     let endIdx = lines.length - 1;
     for (let j = item.defIdx + 1; j < lines.length; j++) {
@@ -6762,13 +6851,14 @@ function extractPythonSymbols(lines) {
       endIdx--;
     }
     symbols.push({
-      kind: item.kind,
-      name: item.name,
+      kind,
+      name,
       startLine: startIdx + 1,
       endLine: endIdx + 1,
       depth: item.indent > 0 ? 1 : 0
     });
   }
+  symbols.sort((a, b) => a.startLine - b.startLine || a.depth - b.depth);
   return symbols;
 }
 function stripLeadingGdAnnotations(text) {
@@ -9927,7 +10017,7 @@ function shouldCliExitNonZero(tool, result) {
 }
 
 // src/mcp-server.ts
-var SERVER_VERSION = "0.3.1";
+var SERVER_VERSION = "0.3.2";
 var DEFAULT_PLUGIN_ROOT = path7.resolve(
   path7.dirname(fileURLToPath2(import.meta.url)),
   ".."

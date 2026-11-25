@@ -816,6 +816,109 @@ async function detectManifestsInDir(
   return hints;
 }
 
+const AUDIT_SCRIPT_NAME_RE =
+  /(?:audit|redline|pre[-_]?commit|lint|check|verify)/i;
+const AUDIT_SCRIPT_EXT_RE = /\.(?:py|sh|mjs|cjs|js|ts)$/i;
+
+async function detectPluginAndAuditHints(
+  workspaceDir: string,
+  topRes: { ok: true; value: Dirent[] } | { ok: false; timedOut: boolean },
+  isHomeRoot: boolean,
+  deadlineMs: number,
+): Promise<string[]> {
+  if (isHomeRoot || !topRes.ok || performance.now() >= deadlineMs) {
+    return [];
+  }
+
+  const hasAgentDir = topRes.value.some((e) => e.isDirectory() && e.name === ".agent");
+  const hasScriptsDir = topRes.value.some((e) => e.isDirectory() && e.name === "scripts");
+
+  const [pluginHint, auditHint] = await Promise.all([
+    // Lightly detect project-level .agent/plugins/*/mcp_config.json
+    (async (): Promise<string | null> => {
+      if (!hasAgentDir || performance.now() >= deadlineMs) return null;
+      const pluginsDir = path.join(workspaceDir, ".agent", "plugins");
+      const pluginsRes = await raceWithDeadline(
+        fs.readdir(pluginsDir, { withFileTypes: true }),
+        deadlineMs,
+      );
+      if (!pluginsRes.ok) return null;
+      const pluginDirs = pluginsRes.value
+        .filter((e) => e.isDirectory() || e.isSymbolicLink())
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .slice(0, 6);
+      if (pluginDirs.length === 0) return null;
+
+      const found: string[] = [];
+      await Promise.all(
+        pluginDirs.map(async (d) => {
+          if (performance.now() >= deadlineMs) return;
+          const cfgPath = path.join(pluginsDir, d.name, "mcp_config.json");
+          const acc = await raceWithDeadline(fs.access(cfgPath), deadlineMs);
+          if (acc.ok) {
+            found.push(d.name);
+          }
+        }),
+      );
+      found.sort();
+      if (found.length === 0) return null;
+      return found.length === 1
+        ? `.agent/plugins/${found[0]}/mcp_config.json`
+        : `.agent/plugins MCP: ${found.join(", ")}`;
+    })(),
+
+    // Lightly detect common fast-audit scripts under scripts/ and scripts/{devops,ci}/
+    (async (): Promise<string | null> => {
+      if (!hasScriptsDir || performance.now() >= deadlineMs) return null;
+      const scriptsDir = path.join(workspaceDir, "scripts");
+      const scriptsRes = await raceWithDeadline(
+        fs.readdir(scriptsDir, { withFileTypes: true }),
+        deadlineMs,
+      );
+      if (!scriptsRes.ok) return null;
+
+      const matched: string[] = [];
+      const subAuditDirs: string[] = [];
+      for (const entry of scriptsRes.value) {
+        if (entry.isFile() && AUDIT_SCRIPT_NAME_RE.test(entry.name) && AUDIT_SCRIPT_EXT_RE.test(entry.name)) {
+          matched.push(`scripts/${entry.name}`);
+        } else if (entry.isDirectory() && (entry.name === "devops" || entry.name === "ci")) {
+          subAuditDirs.push(entry.name);
+        }
+      }
+
+      if (subAuditDirs.length > 0 && performance.now() < deadlineMs) {
+        await Promise.all(
+          subAuditDirs.map(async (sub) => {
+            const subRes = await raceWithDeadline(
+              fs.readdir(path.join(scriptsDir, sub), { withFileTypes: true }),
+              deadlineMs,
+            );
+            if (!subRes.ok) return;
+            for (const entry of subRes.value) {
+              if (
+                entry.isFile() &&
+                AUDIT_SCRIPT_NAME_RE.test(entry.name) &&
+                AUDIT_SCRIPT_EXT_RE.test(entry.name)
+              ) {
+                matched.push(`scripts/${sub}/${entry.name}`);
+              }
+            }
+          }),
+        );
+      }
+
+      matched.sort();
+      if (matched.length === 0) return null;
+      const shown = matched.slice(0, 4);
+      const suffix = matched.length > 4 ? ` (+${matched.length - 4})` : "";
+      return `Audit scripts: ${shown.join(", ")}${suffix}`;
+    })(),
+  ]);
+
+  return [pluginHint, auditHint].filter((h): h is string => Boolean(h));
+}
+
 async function getProjectManifestSummary(
   workspaceDir: string,
   topRes: { ok: true; value: Dirent[] } | { ok: false; timedOut: boolean },
@@ -825,10 +928,13 @@ async function getProjectManifestSummary(
   const rootKnownFiles = topRes.ok
     ? new Set(topRes.value.filter((e) => !e.isDirectory()).map((e) => e.name))
     : undefined;
-  const rootRes = await raceWithDeadline(
-    detectManifestsInDir(workspaceDir, "", rootKnownFiles),
-    deadlineMs,
-  );
+  const [rootRes, extraHints] = await Promise.all([
+    raceWithDeadline(
+      detectManifestsInDir(workspaceDir, "", rootKnownFiles),
+      deadlineMs,
+    ),
+    detectPluginAndAuditHints(workspaceDir, topRes, isHomeRoot, deadlineMs),
+  ]);
   const rootHints = rootRes.ok ? [...rootRes.value].sort() : [];
   const subHints: string[] = [];
 
@@ -866,7 +972,7 @@ async function getProjectManifestSummary(
   }
 
   subHints.sort();
-  const allHints = [...rootHints, ...subHints];
+  const allHints = [...rootHints, ...extraHints, ...subHints];
   if (allHints.length === 0) return null;
   return `Project:\n${allHints.slice(0, 6).map((h) => `  - ${h}`).join("\n")}`;
 }

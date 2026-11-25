@@ -854,4 +854,43 @@ describe("session-start hook", () => {
       await fs.rm(cjkDir, { recursive: true, force: true });
     }
   });
+
+  it("lightly detects .agent/plugins/*/mcp_config.json and fast-audit scripts within 1.5KB", async () => {
+    const pyDir = await fs.mkdtemp(path.join(os.tmpdir(), "agy-fast-py-snap-"));
+    try {
+      await fs.mkdir(path.join(pyDir, ".agent", "plugins", "fast-mcp"), { recursive: true });
+      await fs.mkdir(path.join(pyDir, ".agent", "plugins", "empty-plugin"), { recursive: true });
+      await fs.mkdir(path.join(pyDir, "scripts", "devops"), { recursive: true });
+      await fs.writeFile(
+        path.join(pyDir, "pyproject.toml"),
+        "[tool.pytest.ini_options]\n[tool.ruff]\n[tool.mypy]\n",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pyDir, ".agent", "plugins", "fast-mcp", "mcp_config.json"),
+        '{"mcpServers":{}}',
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pyDir, "scripts", "devops", "audit_redline.py"),
+        "print('ok')\n",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pyDir, "scripts", "check_fast.sh"),
+        "#!/bin/sh\necho ok\n",
+        "utf8",
+      );
+
+      const snap = await buildWorkspaceSnapshot(pyDir);
+      assert.ok(snap !== null, "Expected non-null workspace snapshot");
+      assert.ok(Buffer.byteLength(snap, "utf8") <= 1500, `Snapshot exceeded 1500 bytes: ${Buffer.byteLength(snap, "utf8")}`);
+      assert.match(snap, /pyproject\.toml \(pytest, ruff, mypy\)/);
+      assert.match(snap, /\.agent\/plugins\/fast-mcp\/mcp_config\.json/);
+      assert.doesNotMatch(snap, /empty-plugin/);
+      assert.match(snap, /Audit scripts: scripts\/check_fast\.sh, scripts\/devops\/audit_redline\.py/);
+    } finally {
+      await fs.rm(pyDir, { recursive: true, force: true });
+    }
+  });
 });

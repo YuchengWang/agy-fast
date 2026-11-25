@@ -5,6 +5,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [0.3.2] - 2026-11-25
+
+### Added & Improved
+
+- **Python ecosystem log denoising (`src/utils/output-filter.ts`)**
+  - Filtered noisy `pytest` collection/session headers and separator banners, collapsed `mypy` `Found N errors` / `Success:` noise and redundant `ruff` summary chrome, and deduplicated `tqdm` carriage-return progress frames so `run_checks` and `apply_edits` inline `verify` surface actionable diagnostics within tight byte budgets.
+- **`SessionStart` `.agent/plugins` & audit script probing (`src/utils/snapshot.ts`)**
+  - Detected `.agent/plugins/*/mcp_config.json` and project audit/gate scripts (`scripts/audit_*.py`, `scripts/devops/*`) in `SessionStart` snapshots so agents see available local plugins and verification entrypoints immediately.
+- **Enhanced Python `@dataclass`, route, and CLI decorator extraction in `quick_outline` (`src/tools/read-slices.ts`)**
+  - Extracted `@dataclass` definitions and Python route/CLI decorators (e.g., `@router.*`, `@app.*`, `@cli.*`, `@click.*`) alongside their decorated functions/classes in `quick_outline`.
+
+### 简体中文摘要（v0.3.2）
+
+- **Python 生态日志降噪（`src/utils/output-filter.ts`）**：自动收敛 `pytest`、`mypy`、`ruff` 冗余头部与汇总输出，并折叠 `tqdm` 回车刷新进度帧，让 `run_checks` 与 `apply_edits` 内联 `verify` 在紧凑字节预算内聚焦有效诊断信息。
+- **`SessionStart` `.agent/plugins` 与门禁脚本探测（`src/utils/snapshot.ts`）**：启动快照自动探测 `.agent/plugins/*/mcp_config.json` 与仓库审计/门禁脚本（如 `scripts/audit_*.py`、`scripts/devops/*`），开局即可感知本地插件与校验入口。
+- **`quick_outline` Python `@dataclass`/路由/CLI 装饰器提取增强（`src/tools/read-slices.ts`）**：增强提取 Python `@dataclass` 及路由/CLI 装饰器（`@router.*`、`@app.*`、`@cli.*`、`@click.*` 等），与被装饰符号一并呈现。
+
+---
+
 ## [0.3.1] - 2026-11-24
 
 ### Added

@@ -647,4 +647,66 @@ describe("output-filter", () => {
     });
     assert.equal(unknownEmpty.bodyText, "Exited with code unknown");
   });
+
+  it("denoises Python pytest/mypy/ruff/tqdm logs while preserving tracebacks and failures", () => {
+    const pythonFailureLog = [
+      "============================= test session starts ==============================",
+      "platform linux -- Python 3.11.9, pytest-8.2.0, pluggy-1.5.0",
+      "cachedir: .pytest_cache",
+      "rootdir: /repo",
+      "configfile: pyproject.toml",
+      "plugins: cov-5.0.0, asyncio-0.23.6",
+      "collecting ...",
+      "collected 48 items",
+      "tests/test_alpha.py ..........                                          [ 20%]",
+      "tests/test_errors.py::test_handle_error_payload PASSED                  [ 25%]",
+      "tests/test_beta.py::test_retry_backoff SKIPPED                          [ 27%]",
+      ".................................                                        [ 90%]",
+      "  0%|          | 0/100 [00:00<?, ?it/s]",
+      "Fetching bars: 100%|██████████| 100/100 [00:01<00:00, 92.34it/s]",
+      "123it [00:01, 100.23it/s]",
+      "[*] 3 fixable with the `--fix` option.",
+      "No fixes available (2 hidden fixes can be enabled with the `--unsafe-fixes` option).",
+      "src/app.py:12: note: See https://mypy.readthedocs.io/en/stable/common_issues.html",
+      "tests/test_gamma.py ..F.                                                [100%]",
+      "=================================== FAILURES ===================================",
+      "_____________________________ test_compute_signal ______________________________",
+      "Traceback (most recent call last):",
+      '  File "tests/test_gamma.py", line 42, in test_compute_signal',
+      "    assert compute(0) == 1",
+      "ValueError: invalid window size 0",
+      "src/app.py:18:4: F401 'os' imported but unused",
+      ...Array.from({ length: 15 }, (_, i) => `summary tail line ${i}`),
+    ].join("\n");
+
+    const meta = formatCompactCommandOutputWithMeta({
+      stdout: pythonFailureLog,
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      maxChars: 8800,
+    });
+
+    assert.equal(meta.truncated, false);
+    assert.ok(meta.collapsedLines >= 12, `Expected pytest header+pass lines folded, got ${meta.collapsedLines}`);
+    assert.doesNotMatch(meta.text, /Fetching bars: 100%/);
+    assert.doesNotMatch(meta.text, /123it \[00:01/);
+    assert.doesNotMatch(meta.text, /fixable with the `--fix` option/);
+    assert.doesNotMatch(meta.text, /mypy\.readthedocs\.io/);
+    // Real failures (including F in dots, traceback, ValueError, ruff F401) must be preserved
+    assert.match(meta.text, /tests\/test_gamma\.py \.\.F\./);
+    assert.match(meta.text, /Traceback \(most recent call last\):/);
+    assert.match(meta.text, /ValueError: invalid window size 0/);
+    assert.match(meta.text, /F401 'os' imported but unused/);
+
+    // Passing mypy summary should be picked cleanly on exitCode === 0
+    const mypyPass = formatCompactCommandOutput({
+      stdout: "Success: no issues found in 42 source files",
+      stderr: "",
+      exitCode: 0,
+      timedOut: false,
+      maxChars: 8800,
+    });
+    assert.equal(mypyPass, "Success: no issues found in 42 source files");
+  });
 });

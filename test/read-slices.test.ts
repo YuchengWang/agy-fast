@@ -1271,4 +1271,48 @@ describe("read_slices", () => {
     assert.match(encRes.text, /be\.rc\nERROR: UTF-16 encoded file is not supported \(convert to UTF-8 first\): .*\[UTF-16 BE\]/);
     assert.match(encRes.text, /u32\.txt\nERROR: Binary file cannot be read as text:/);
   });
+
+  it("extracts Python @dataclass, route decorators (@app./@router.), CLI commands, and add_parser registrations", async () => {
+    const pyCode = [
+      "from dataclasses import dataclass",
+      "",
+      "@dataclass(",
+      "    frozen=True,",
+      ")",
+      "class TradeConfig:",
+      "    symbol: str",
+      "    limit: int = 10",
+      "",
+      "@app.get(",
+      '    "/api/orders",',
+      ")",
+      "async def list_orders():",
+      "    return []",
+      "",
+      '@cli.command("sync")',
+      "def sync_data():",
+      "    pass",
+      "",
+      "def build_cli(subparsers):",
+      '    p_run = subparsers.add_parser("run", help="Run checks")',
+      "    p_check = subparsers.add_parser(",
+      '        "check",',
+      '        help="Verify",',
+      "    )",
+      "    return subparsers",
+    ].join("\n");
+
+    const syms = extractSymbols("cli_app.py", pyCode);
+    assert.deepEqual(
+      syms.map((s) => `${s.kind}:${s.name}:${s.startLine}-${s.endLine}:d${s.depth}`),
+      [
+        "dataclass:TradeConfig:3-8:d0",
+        "route:GET /api/orders (list_orders):10-14:d0",
+        "command:sync (sync_data):16-18:d0",
+        "function:build_cli:20-26:d0",
+        "cli:add_parser run:21-21:d1",
+        "cli:add_parser check:22-25:d1",
+      ],
+    );
+  });
 });

@@ -788,14 +788,71 @@ function extractPythonSymbols(lines: string[]): SymbolEntry[] {
     }
   }
 
+  const dataclassDecoRe = /@(?:dataclasses\.)?dataclass\b/;
+  const routeDecoRe =
+    /@[A-Za-z_][\w.]*\.(get|post|put|patch|delete|options|head|route|api_route|websocket)\s*\(\s*['"]([^'"]+)['"]/i;
+  const cliDecoRe =
+    /@(?:click|[A-Za-z_]\w*)\.(?:command|group)\s*(?:\(\s*(?:['"]([^'"]+)['"])?)?/;
+  const addParserRe = /^([ \t]*)[^#"'\n]*\badd_parser\s*\(/;
+  const addRouteCallRe = /^([ \t]*)[^#"'\n]*\.add_(?:api_route|route|url_rule)\s*\(/;
+
   const raw: Array<{ indent: number; kind: string; name: string; defIdx: number }> = [];
   for (let i = 0; i < lines.length; i++) {
     if (isContinuation[i]) continue;
-    const m = re.exec(lines[i]!);
-    if (!m) continue;
-    const indent = m[1]!.replace(/\t/g, "    ").length;
-    const kind = m[2] === "class" ? "class" : indent > 0 ? "method" : "function";
-    raw.push({ indent, kind, name: m[3]!, defIdx: i });
+    const line = lines[i]!;
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const m = re.exec(line);
+    if (m) {
+      const indent = m[1]!.replace(/\t/g, "    ").length;
+      const kind = m[2] === "class" ? "class" : indent > 0 ? "method" : "function";
+      raw.push({ indent, kind, name: m[3]!, defIdx: i });
+      continue;
+    }
+
+    const mp = addParserRe.exec(line);
+    if (mp) {
+      const indent = mp[1]!.replace(/\t/g, "    ").length;
+      let endIdx = i;
+      const maxLook = Math.min(lines.length - 1, i + 8);
+      while (endIdx + 1 <= maxLook && isContinuation[endIdx + 1]) {
+        endIdx++;
+      }
+      const snippet = lines.slice(i, endIdx + 1).join(" ");
+      const argMatch = /\badd_parser\s*\(\s*['"]([^'"]+)['"]/.exec(snippet);
+      if (argMatch?.[1]) {
+        symbols.push({
+          kind: "cli",
+          name: `add_parser ${argMatch[1]}`,
+          startLine: i + 1,
+          endLine: endIdx + 1,
+          depth: indent > 0 ? 1 : 0,
+        });
+      }
+      continue;
+    }
+
+    const mr = addRouteCallRe.exec(line);
+    if (mr) {
+      const indent = mr[1]!.replace(/\t/g, "    ").length;
+      let endIdx = i;
+      const maxLook = Math.min(lines.length - 1, i + 8);
+      while (endIdx + 1 <= maxLook && isContinuation[endIdx + 1]) {
+        endIdx++;
+      }
+      const snippet = lines.slice(i, endIdx + 1).join(" ");
+      const argMatch = /\.add_(?:api_route|route|url_rule)\s*\(\s*['"]([^'"]+)['"]/.exec(snippet);
+      if (argMatch?.[1]) {
+        symbols.push({
+          kind: "route",
+          name: `ROUTE ${argMatch[1]}`,
+          startLine: i + 1,
+          endLine: endIdx + 1,
+          depth: indent > 0 ? 1 : 0,
+        });
+      }
+    }
   }
 
   for (let idx = 0; idx < raw.length; idx++) {
@@ -808,6 +865,26 @@ function extractPythonSymbols(lines: string[]): SymbolEntry[] {
       if (trimmed.startsWith("#")) continue;
       if (!trimmed.startsWith("@") || indentOf(lines[j]!) !== item.indent) break;
       startIdx = j;
+    }
+    let kind = item.kind;
+    let name = item.name;
+    if (startIdx < item.defIdx) {
+      const decoText = lines.slice(startIdx, item.defIdx).join(" ");
+      if (kind === "class" && dataclassDecoRe.test(decoText)) {
+        kind = "dataclass";
+      } else if (kind !== "class") {
+        const routeMatch = routeDecoRe.exec(decoText);
+        if (routeMatch?.[1] && routeMatch[2]) {
+          kind = "route";
+          name = `${routeMatch[1].toUpperCase()} ${routeMatch[2]} (${item.name})`;
+        } else {
+          const cliMatch = cliDecoRe.exec(decoText);
+          if (cliMatch) {
+            kind = "command";
+            name = cliMatch[1] ? `${cliMatch[1]} (${item.name})` : item.name;
+          }
+        }
+      }
     }
     let endIdx = lines.length - 1;
     for (let j = item.defIdx + 1; j < lines.length; j++) {
@@ -837,14 +914,15 @@ function extractPythonSymbols(lines: string[]): SymbolEntry[] {
       endIdx--;
     }
     symbols.push({
-      kind: item.kind,
-      name: item.name,
+      kind,
+      name,
       startLine: startIdx + 1,
       endLine: endIdx + 1,
       depth: item.indent > 0 ? 1 : 0,
     });
   }
 
+  symbols.sort((a, b) => a.startLine - b.startLine || a.depth - b.depth);
   return symbols;
 }
 
