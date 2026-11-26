@@ -136,7 +136,7 @@ node scripts/install.mjs install --project /path/to/your-repo
 | :--- | :--- | :--- |
 | **原生插件清单** | [`plugin.json`](plugin.json) | 符合官方规范的元数据，通过 `agy plugin validate --strict` 零警告校验 |
 | **本地常驻 MCP 服务** | [`mcp_config.json`](mcp_config.json) → [`dist/mcp-server.mjs`](dist/mcp-server.mjs) | 常驻本地进程，在 `agy-fast_fast` 下以急加载（`"eager": true`）暴露 5 个强类型合并工具 |
-| **会话启动快照钩子** | [`hooks.json`](hooks.json) → [`dist/session-start.mjs`](dist/session-start.mjs) | 仅在 `SessionStart` 运行一次（`~35–50 ms`，内置 `250 ms` 扫描熔断与系统/用户目录黑名单），注入 `≤1.5 KB` 项目/Git/目录快照 |
+| **会话启动快照钩子** | [`hooks.json`](hooks.json) → [`dist/session-start.mjs`](dist/session-start.mjs) | 仅在 `SessionStart` 运行一次（`~35–50 ms`，内置 `250 ms` 扫描熔断与系统/用户目录黑名单），注入 `≤1.5 KB` 项目/Git/目录快照（自动探测 `.agent/plugins/*/mcp_config.json` 与 `scripts/audit_*.py` / `scripts/devops/*` 门禁脚本） |
 | **工具路由与卫生规则** | [`rules/AGENTS.md`](rules/AGENTS.md) | 约 `6.5 KB` 精简路由规则，内联参数签名（支持自定义 `rules/AGENTS.local.md`，需带 `trigger: always_on` frontmatter，更新与重装自动保留） |
 | **后台自动更新器** | [`dist/updater.mjs`](dist/updater.mjs) | 4 小时分离式后台检查，先暂存执行 MCP 冒烟校验再原子替换 |
 | **离线基准测试工具** | [`dist/benchmark.mjs`](dist/benchmark.mjs) | 本地解析 `transcript.jsonl` 并输出单次指标或前后 A/B 对比 |
@@ -204,16 +204,16 @@ node dist/benchmark.mjs compare --before ./before/transcript.jsonl --after ./aft
 ### 2. `apply_edits` — 原子多处/跨文件编辑 + 内联校验
 - **单次最多 50 个文件**：默认全内存预校验后原子写入（任意失配或重叠均不改动磁盘）；大批量可传 `bestEffort: true` 按文件原子提交成功项，并对失败项自动返回最相近代码行与行号漂移提示，便于精准重试。
 - **无损保留文件属性**：保留 CRLF 换行符、文件权限与软链接；支持 `startLine`/`endLine`、`replaceAll`、`create`/`overwrite` 与 `dryRun`。
-- **可选内联 `verify`**：落盘后直接执行构建/类型检查/测试命令，自动过滤 Pino/Bunyan info JSON 与 Maven 尾注噪声，保留核心报错根因。
+- **可选内联 `verify`**：落盘后直接执行构建/类型检查/测试命令，自动过滤 Pino/Bunyan info JSON、Maven 尾注以及 `pytest`/`mypy`/`ruff`/`tqdm` 冗余噪声，保留核心报错根因。
 
 ### 3. `quick_outline` — 极简多语言符号大纲提取
-- **扁平参数，单次最多 40 个文件** *（推荐 10–20 个/批）*：仅需传入扁平 `paths: string[]` 即可提取起止行号，覆盖 **TypeScript / JavaScript** *（含 Fastify/Express 路由与测试块）*、**HTML / Vue / Svelte**、**CSS / SCSS / Less**、**Python**、**Godot GDScript（`.gd`）**、**Go**、**Rust**、**Java / Kotlin / C# / Swift / C / C++**、**Shell**、**Markdown** 与 **JSON / YAML**，配合并行内置 `read_file` 极简顺手。
+- **扁平参数，单次最多 40 个文件** *（推荐 10–20 个/批）*：仅需传入扁平 `paths: string[]` 即可提取起止行号，覆盖 **TypeScript / JavaScript** *（含 Fastify/Express 路由与测试块）*、**HTML / Vue / Svelte**、**CSS / SCSS / Less**、**Python** *（含 `@dataclass`、FastAPI/Flask `@router.*`/`@app.*` 路由与 `@cli.*`/`@click.*` CLI 装饰器）*、**Godot GDScript（`.gd`）**、**Go**、**Rust**、**Java / Kotlin / C# / Swift / C / C++**、**Shell**、**Markdown** 与 **JSON / YAML**，配合并行内置 `read_file` 极简顺手。
 
 ### 4. `read_slices` — 符号大纲 + 精确行段切片
 - **大纲与小切片合一**：支持同等 15 种格式符号大纲（支持单文件广度优先水填充分配），并可在同一次请求中顺带读取少量小行段（总输出死守 `≤8.8 KB` UTF-8 上限）；大段正文读取自动引导至并行内置 `read_file`。
 
 ### 5. `run_checks` — 并发构建、规范检查、测试与诊断执行器
-- **单次最多 12 条命令**：在受控并发池（`concurrency: 1..8`）中并行执行独立非交互命令，支持单条超时强杀（`1..170 s`，单次调用共享 `170 s` 预算以适配 Antigravity `180 s` MCP 上限）、ANSI 转义符清理，并在 Windows 下自动透明解包针对白名单 CLI（`git`/`npm`/`node`/`rg`/`pytest`/`cargo` 等）的冗余 `powershell -Command "..."` 包装，免去 PowerShell 冷启动开销（PowerShell cmdlet、别名与管道完全原样保留）。
+- **单次最多 12 条命令**：在受控并发池（`concurrency: 1..8`）中并行执行独立非交互命令，支持单条超时强杀（`1..170 s`，单次调用共享 `170 s` 预算以适配 Antigravity `180 s` MCP 上限）、ANSI 转义符清理、Python 生态日志降噪（`pytest` 冗余头、`mypy`/`ruff` 汇总噪声与 `tqdm` 回车进度帧），并在 Windows 下自动透明解包针对白名单 CLI（`git`/`npm`/`node`/`rg`/`pytest`/`cargo` 等）的冗余 `powershell -Command "..."` 包装，免去 PowerShell 冷启动开销（PowerShell cmdlet、别名与管道完全原样保留）。
 - **头尾折叠（Head-Tail）双输出模式**：默认 `compact` 模式将通过项折叠为 1 行摘要、超长失败日志采用**头尾折叠**（同时保留首条根因报错与末尾测试汇总/堆栈尾部）；`full` 模式在 `≤8.8 KB` 预算内保留标准输出，超限时同样采用头尾折叠。
 
 <details>

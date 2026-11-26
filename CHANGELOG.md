@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [0.3.1-ycwang.2] - 2026-11-26
+
+### Docs & Release
+
+- Documented `develop` fork optimizations in `README.md` and `README.zh-CN.md`: Python `@dataclass`, FastAPI/Flask route (`@router.*`/`@app.*`), and CLI (`@cli.*`/`@click.*`) decorator extraction in `quick_outline`, `pytest`/`mypy`/`ruff`/`tqdm` log denoising in `run_checks` / `apply_edits` inline `verify`, and `.agent/plugins/*/mcp_config.json` + `scripts/audit_*.py` / `scripts/devops/*` probing in `SessionStart`.
+
+---
+
 ## [0.3.1-ycwang.1] - 2026-11-25
 
 ### Added & Improved
